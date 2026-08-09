@@ -1,0 +1,24 @@
+{
+  "name": "jintian-reader",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "import-novel": "node scripts/import-novel.mjs",
+    "update-novel": "node scripts/update-novel.mjs",
+    "publish-novel": "node scripts/update-novel.mjs --publish"
+  },
+  "dependencies": {
+    "mammoth": "^1.12.0",
+    "next": "^16.1.6",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3"
+  }
+}

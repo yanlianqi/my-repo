@@ -1,0 +1,20 @@
+{
+  "id": "jintian",
+  "title": "烬天",
+  "version": 1786246073120,
+  "totalChapters": 2,
+  "chapters": [
+    {
+      "number": 1,
+      "title": "山河之外",
+      "volume": "正文",
+      "file": "chapters/0001.json"
+    },
+    {
+      "number": 2,
+      "title": "雪中仙人",
+      "volume": "正文",
+      "file": "chapters/0002.json"
+    }
+  ]
+}
