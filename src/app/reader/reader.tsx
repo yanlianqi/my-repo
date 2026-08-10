@@ -199,21 +199,28 @@ export default function Reader() {
   const [importMode, setImportMode] = useState<ImportMode>("append");
   const [editingClues, setEditingClues] = useState(false);
   const [notice, setNotice] = useState("");
+  const [isAuthorMode, setIsAuthorMode] = useState(false);
+  const [shareStatus, setShareStatus] = useState<"idle" | "copied">("idle");
   const articleRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
+    setIsAuthorMode(["localhost", "127.0.0.1", "::1"].includes(window.location.hostname));
+    const requestedChapter = Number(new URLSearchParams(window.location.search).get("chapter"));
+
     Promise.all([loadLibrary<Chapter>(), loadPublishedBook()])
       .then(([library, published]) => {
         if (library?.chapters.length) {
           const shouldUpdatePublishedBook = Boolean(library.builtInVersion && published && published.version > library.builtInVersion);
           const restoredChapters = shouldUpdatePublishedBook ? mergeChapters(library.chapters, published!.chapters).chapters : library.chapters;
           setChapters(restoredChapters);
-          setActiveChapterId(library.activeChapterId || library.chapters[0].id);
+          const linkedChapter = restoredChapters.find((chapter) => chapter.number === requestedChapter);
+          setActiveChapterId(linkedChapter?.id || library.activeChapterId || restoredChapters[0].id);
           setSourceNames(library.sourceNames || []);
           setBuiltInVersion(shouldUpdatePublishedBook ? published!.version : library.builtInVersion || 0);
         } else if (published?.chapters.length) {
           setChapters(published.chapters);
-          setActiveChapterId(published.chapters[0].id);
+          const linkedChapter = published.chapters.find((chapter) => chapter.number === requestedChapter);
+          setActiveChapterId(linkedChapter?.id || published.chapters[0].id);
           setSourceNames([`《${published.title}》·网站内置`]);
           setBuiltInVersion(published.version);
         }
@@ -238,11 +245,55 @@ export default function Reader() {
   const fileLabel = sourceNames.length ? `${sourceNames.length} 个本地原稿` : "演示内容 · 《烬天》";
   const characterLines = current?.clues.characters.split("\n").filter(Boolean) || [];
 
+  const setChapterUrl = (chapter: Chapter, mode: "push" | "replace") => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("chapter", String(chapter.number));
+    window.history[mode === "push" ? "pushState" : "replaceState"]({ chapter: chapter.number }, "", url);
+  };
+
+  useEffect(() => {
+    if (!hydrated || !current) return;
+    const linkedNumber = Number(new URLSearchParams(window.location.search).get("chapter"));
+    if (linkedNumber !== current.number) setChapterUrl(current, "replace");
+  }, [hydrated, current]);
+
+  useEffect(() => {
+    const restoreLinkedChapter = () => {
+      const linkedNumber = Number(new URLSearchParams(window.location.search).get("chapter"));
+      const linkedChapter = chapters.find((chapter) => chapter.number === linkedNumber);
+      if (!linkedChapter) return;
+      setActiveChapterId(linkedChapter.id);
+      setEditingClues(false);
+      setMenuOpen(false);
+      articleRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    };
+    window.addEventListener("popstate", restoreLinkedChapter);
+    return () => window.removeEventListener("popstate", restoreLinkedChapter);
+  }, [chapters]);
+
   const selectChapter = (chapter: Chapter) => {
     setActiveChapterId(chapter.id);
+    setChapterUrl(chapter, "push");
     setEditingClues(false);
     setMenuOpen(false);
     articleRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const shareChapter = async () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("chapter", String(current.number));
+    const shareData = { title: `《烬天》第 ${current.number} 集 · ${current.title}`, text: `阅读《烬天》第 ${current.number} 集：${current.title}`, url: url.toString() };
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+      } else {
+        await navigator.clipboard.writeText(shareData.url);
+        setShareStatus("copied");
+        window.setTimeout(() => setShareStatus("idle"), 1800);
+      }
+    } catch {
+      // The native share sheet may be dismissed without requiring an error message.
+    }
   };
 
   const updateClue = (field: keyof ChapterClues, value: string) => {
@@ -294,8 +345,8 @@ export default function Reader() {
       <header className={styles.topbar}>
         <button className={styles.mobileButton} onClick={() => setMenuOpen(true)} aria-label="打开目录">目</button>
         <div className={styles.brand}><span className={styles.seal}>烬</span><div><strong>烬天</strong><small>JINTIAN READER</small></div></div>
-        <div className={styles.bookStatus}><span>{fileLabel}</span><i>{sourceNames.length ? "已保存在此浏览器" : "导入后自动保存"}</i></div>
-        <button className={styles.importButton} onClick={() => { setNotice(""); setImportOpen(true); }}><span>＋</span> 导入原稿</button>
+        <div className={styles.bookStatus}><span>{isAuthorMode ? fileLabel : `${chapters.length} 集 · 连载中`}</span><i>{isAuthorMode ? (sourceNames.length ? "已保存在此浏览器" : "导入后自动保存") : `正在阅读第 ${current?.number || 1} 集`}</i></div>
+        {isAuthorMode && <button className={styles.importButton} onClick={() => { setNotice(""); setImportOpen(true); }}><span>＋</span> 导入原稿</button>}
         <button className={styles.mobileButton} onClick={() => setInfoOpen(true)} aria-label="打开设定">设</button>
       </header>
 
@@ -326,6 +377,7 @@ export default function Reader() {
             <div className={styles.eyebrow}><span>{current?.volume}</span><i /><span>第 {current?.number} 集</span></div>
             <h1>{current?.title}</h1>
             {(current?.clues.time || current?.clues.location) && <div className={styles.chapterMeta}><span>{current.clues.time}</span>{current.clues.time && current.clues.location && <b>◇</b>}<span>{current.clues.location}</span></div>}
+            {!isAuthorMode && <button className={styles.shareChapter} onClick={shareChapter}><span>{shareStatus === "copied" ? "链接已复制" : "分享本集"}</span><b aria-hidden="true">↗</b></button>}
             <div className={styles.prose} dangerouslySetInnerHTML={{ __html: current?.html || "" }} />
             <div className={styles.chapterEnd}>此集 · 完</div>
             <div className={styles.pageNav}>
@@ -353,7 +405,7 @@ export default function Reader() {
             <div><small>本集线索</small><strong>{current?.title}</strong></div>
             <button onClick={() => setInfoOpen(false)}>×</button>
           </div>
-          <button className={styles.editClues} onClick={() => setEditingClues((value) => !value)}>{editingClues ? "完成编辑" : "编辑线索"}</button>
+          {isAuthorMode && <button className={styles.editClues} onClick={() => setEditingClues((value) => !value)}>{editingClues ? "完成编辑" : "编辑线索"}</button>}
           {editingClues ? (
             <div className={styles.clueEditor}>
               <label>境界<input value={current?.clues.realm || ""} onChange={(event) => updateClue("realm", event.target.value)} placeholder="例如：凡人境" /></label>
@@ -371,7 +423,7 @@ export default function Reader() {
               <section><h2>出场人物</h2>{characterLines.length ? <ul className={styles.clueList}>{characterLines.map((line) => { const [name, detail] = line.split("｜"); return <li key={line}><span>{name}</span><small>{detail || "暂无说明"}</small></li>; })}</ul> : <p className={styles.emptyClue}>尚未整理</p>}</section>
               <section><h2>地点</h2>{current?.clues.location ? <div className={styles.location}><span>{current.clues.region}</span><strong>{current.clues.location}</strong><small>{current.clues.locationNote}</small></div> : <p className={styles.emptyClue}>尚未整理</p>}</section>
               <section><h2>伏笔</h2>{current?.clues.foreshadow ? <blockquote>{current.clues.foreshadow}</blockquote> : <p className={styles.emptyClue}>尚未整理</p>}</section>
-              <p className={styles.spoiler}>线索由你编辑，不会自动发送给 AI</p>
+              <p className={styles.spoiler}>{isAuthorMode ? "线索由你编辑，不会自动发送给 AI" : "仅显示本集线索 · 不含后续剧透"}</p>
             </>
           )}
         </aside>
@@ -379,7 +431,7 @@ export default function Reader() {
 
       {(menuOpen || infoOpen) && <button className={styles.backdrop} onClick={() => { setMenuOpen(false); setInfoOpen(false); }} aria-label="关闭面板" />}
 
-      {importOpen && (
+      {isAuthorMode && importOpen && (
         <div className={styles.modalBackdrop} role="presentation" onMouseDown={() => setImportOpen(false)}>
           <section className={styles.importModal} role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}>
             <button className={styles.closeModal} onClick={() => setImportOpen(false)}>×</button>
